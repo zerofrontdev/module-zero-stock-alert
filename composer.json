@@ -2,7 +2,7 @@
     "name": "zerofront/module-zero-stock-alert",
     "description": "Zero for Magento Open Source: \"Tell me when it's back\" on sold-out products, for any visitor, and one email when it is.",
     "type": "magento2-module",
-    "version": "1.3.4",
+    "version": "1.3.5",
     "license": [
         "OSL-3.0",
         "AFL-3.0"
