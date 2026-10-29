@@ -51,7 +51,8 @@ class Stock
     public function soldOut(Product $product): array
     {
         if ($product->getTypeId() !== Configurable::TYPE_CODE) {
-            return in_array($product->getTypeId(), ['simple', 'virtual'], true) && !$this->isInStock((int) $product->getId())
+            // The product the page loaded says it; isInStock() would load it a second time.
+            return in_array($product->getTypeId(), ['simple', 'virtual'], true) && !$product->isSalable()
                 ? [(int) $product->getId() => '']
                 : [];
         }
