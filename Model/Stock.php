@@ -58,7 +58,7 @@ class Stock
         }
         $all = array_filter($this->variants($product), static fn (array $variant) => $variant['enabled']);
         // One question for all the variants (multi-source inventory); without it, one product load each.
-        $salable = $this->salable(array_column($all, 'sku'));
+        $salable = $this->salable(array_column($all, 'sku'), null);
         $variants = [];
         foreach ($all as $id => $variant) {
             $inStock = $salable !== null ? ($salable[$variant['sku']] ?? false) : $this->isInStock($id);
@@ -72,14 +72,49 @@ class Stock
     }
 
     /**
-     * Whether each SKU can be bought now in the current website's stock, in one
-     * call (reservations counted, as on the product page); null where the
-     * inventory modules' bulk API is not there.
+     * Whether each product can be bought now in a store view: enabled there
+     * and on its website (one collection), then salable in the website's stock
+     * (one bulk question, reservations counted; without the inventory
+     * modules, one product load each).
+     *
+     * @param array<int, string> $skus Product id => SKU
+     * @return array<int, bool> Product id => can be bought
+     */
+    public function buyable(array $skus, int $storeId): array
+    {
+        $result = array_fill_keys(array_keys($skus), false);
+        if (!$skus) {
+            return $result;
+        }
+        $websiteId = (int) $this->storeManager->getStore($storeId)->getWebsiteId();
+        $collection = $this->collectionFactory->create();
+        // Sold-out products are wanted here; the storefront would hide them.
+        $collection->setFlag('has_stock_status_filter', true);
+        $collection->setStoreId($storeId);
+        $collection->addIdFilter(array_keys($skus));
+        $collection->addWebsiteFilter([$websiteId]);
+        $collection->addAttributeToFilter('status', 1);
+        $enabled = array_intersect_key($skus, array_flip(array_map('intval', $collection->getAllIds())));
+        if (!$enabled) {
+            return $result;
+        }
+        $salable = $this->salable(array_values($enabled), (string) $this->storeManager->getWebsite($websiteId)->getCode());
+        foreach ($enabled as $productId => $sku) {
+            $result[$productId] = $salable !== null ? ($salable[$sku] ?? false) : $this->isInStock((int) $productId, $storeId);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Whether each SKU can be bought now in a website's stock (default: the
+     * current website), in one call (reservations counted, as on the product
+     * page); null where the inventory modules' bulk API is not there.
      *
      * @param string[] $skus
      * @return array<string, bool>|null
      */
-    private function salable(array $skus): ?array
+    private function salable(array $skus, ?string $websiteCode = null): ?array
     {
         $areSalable = '\\Magento\\InventorySalesApi\\Api\\AreProductsSalableInterface';
         $resolver = '\\Magento\\InventorySalesApi\\Api\\StockResolverInterface';
@@ -87,8 +122,8 @@ class Stock
             return null;
         }
         try {
-            $website = $this->storeManager->getWebsite();
-            $stockId = (int) $this->objectManager->get($resolver)->execute('website', $website->getCode())->getStockId();
+            $websiteCode ??= (string) $this->storeManager->getWebsite()->getCode();
+            $stockId = (int) $this->objectManager->get($resolver)->execute('website', $websiteCode)->getStockId();
             $salable = [];
             foreach ($this->objectManager->get($areSalable)->execute(array_values($skus), $stockId) as $result) {
                 $salable[(string) $result->getSku()] = (bool) $result->isSalable();

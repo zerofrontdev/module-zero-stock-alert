@@ -25,9 +25,16 @@ use Psr\Log\LoggerInterface;
  * one email each, in the store view it was asked in (its language, its
  * links), then the alert is done. The product shown is the configurable
  * one for a variant, its option named ("M / Black").
+ *
+ * Only what can be bought is read: the products and store views waited for
+ * (store views with the module off are dropped first), their stock asked
+ * once per store view for 500 products at a time, then the alerts of those
+ * that are back, up to $perRun emails (sent or failed) per run.
  */
 class Notifier
 {
+    private const CHUNK = 500;
+
     public function __construct(
         private readonly Alerts $alerts,
         private readonly Stock $stock,
@@ -39,7 +46,8 @@ class Notifier
         private readonly ImageHelper $imageHelper,
         private readonly PriceHelper $priceHelper,
         private readonly StoreManagerInterface $storeManager,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly int $perRun = 1000
     ) {
     }
 
@@ -49,21 +57,38 @@ class Notifier
     public function sendDue(): array
     {
         $result = ['sent' => 0, 'failed' => 0];
-        foreach ($this->alerts->waitingByProduct() as $productId => $alerts) {
-            foreach ($alerts as $alert) {
-                if (!$this->stock->isInStock($productId, (int) $alert['store_id'])) {
-                    continue;
+        $budget = $this->perRun;
+        $byStore = [];
+        foreach ($this->alerts->waitingPairs() as $pair) {
+            $byStore[$pair['store_id']][$pair['product_id']] = $pair['sku'];
+        }
+        foreach ($byStore as $storeId => $skus) {
+            if (!$this->scopeConfig->isSetFlag('zero_stock_alert/general/enabled', ScopeInterface::SCOPE_STORE, $storeId)) {
+                continue;
+            }
+            foreach (array_chunk($skus, self::CHUNK, true) as $chunk) {
+                if ($budget <= 0) {
+                    return $result;
                 }
-                if (!$this->scopeConfig->isSetFlag('zero_stock_alert/general/enabled', ScopeInterface::SCOPE_STORE, (int) $alert['store_id'])) {
-                    continue;
-                }
-                try {
-                    $this->send($alert);
-                    $this->alerts->markSent((int) $alert['alert_id']);
-                    $result['sent']++;
-                } catch (\Throwable $e) {
-                    $result['failed']++;
-                    $this->logger->error('Zero_StockAlert: alert ' . $alert['alert_id'] . ': ' . $e->getMessage());
+                $buyable = $this->stock->buyable($chunk, $storeId);
+                foreach (array_keys($chunk) as $productId) {
+                    if (empty($buyable[$productId])) {
+                        continue;
+                    }
+                    foreach ($this->alerts->waitingFor($productId, $storeId, $budget) as $alert) {
+                        $budget--;
+                        try {
+                            $this->send($alert);
+                            $this->alerts->markSent((int) $alert['alert_id']);
+                            $result['sent']++;
+                        } catch (\Throwable $e) {
+                            $result['failed']++;
+                            $this->logger->error('Zero_StockAlert: alert ' . $alert['alert_id'] . ': ' . $e->getMessage());
+                        }
+                    }
+                    if ($budget <= 0) {
+                        return $result;
+                    }
                 }
             }
         }

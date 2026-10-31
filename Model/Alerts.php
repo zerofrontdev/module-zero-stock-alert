@@ -64,8 +64,57 @@ class Alerts
     }
 
     /**
+     * What is waited for: each product and store view with waiting alerts
+     * (active store views only), the oldest wait first, with its SKU.
+     *
+     * @return list<array{product_id: int, store_id: int, website_id: int, sku: string}>
+     */
+    public function waitingPairs(): array
+    {
+        $connection = $this->resource->getConnection();
+        $rows = $connection->fetchAll($connection->select()
+            ->from(['a' => $this->table()], ['product_id', 'store_id', 'first' => new \Zend_Db_Expr('MIN(a.alert_id)')])
+            ->join(['s' => $this->resource->getTableName('store')], 's.store_id = a.store_id AND s.is_active = 1', ['website_id'])
+            ->join(['p' => $this->resource->getTableName('catalog_product_entity')], 'p.entity_id = a.product_id', ['sku'])
+            ->where('a.status = ?', self::WAITING)
+            ->group(['a.product_id', 'a.store_id', 's.website_id', 'p.sku'])
+            ->order('first ASC'));
+
+        return array_map(static fn (array $row) => [
+            'product_id' => (int) $row['product_id'],
+            'store_id' => (int) $row['store_id'],
+            'website_id' => (int) $row['website_id'],
+            'sku' => (string) $row['sku'],
+        ], $rows);
+    }
+
+    /**
+     * The waiting alerts for a product in a store view, oldest first.
+     *
+     * @return list<array>
+     */
+    public function waitingFor(int $productId, int $storeId, int $limit): array
+    {
+        if ($limit <= 0) {
+            return [];
+        }
+        $connection = $this->resource->getConnection();
+
+        return $connection->fetchAll($connection->select()
+            ->from($this->table())
+            ->where('product_id = ?', $productId)
+            ->where('store_id = ?', $storeId)
+            ->where('status = ?', self::WAITING)
+            ->order('alert_id ASC')
+            ->limit($limit));
+    }
+
+    /**
      * Waiting alerts, by the product waited for.
      *
+     * @deprecated The oldest alerts whatever their stock: a sold-out product's could hold back the rest.
+     * @see waitingPairs()
+     * @see waitingFor()
      * @return array<int, array[]>
      */
     public function waitingByProduct(int $limit = 2000): array

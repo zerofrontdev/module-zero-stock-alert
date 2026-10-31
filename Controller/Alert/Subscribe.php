@@ -70,7 +70,8 @@ class Subscribe implements HttpPostActionInterface
      */
     private function subscribe(): array
     {
-        if ((string) $this->request->getParam('website') !== '') {
+        $websiteParam = $this->request->getParam('website');
+        if ((is_scalar($websiteParam) ? (string) $websiteParam : '') !== '') {
             return [true, (string) __('Thanks: we\'ll email you when it\'s back.')];
         }
         try {
@@ -78,7 +79,8 @@ class Subscribe implements HttpPostActionInterface
         } catch (LocalizedException $e) {
             return [false, $e->getMessage() . ' ' . __('Reload the page and try again.')];
         }
-        $email = trim((string) $this->request->getParam('email'));
+        $email = $this->request->getParam('email');
+        $email = trim(is_scalar($email) ? (string) $email : '');
         if (!$this->emailValidator->isValid($email)) {
             return [false, (string) __('Please enter a valid email address.')];
         }

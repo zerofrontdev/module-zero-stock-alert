@@ -29,7 +29,8 @@ class Cancel implements HttpGetActionInterface
 
     public function execute()
     {
-        $token = (string) $this->request->getParam('token');
+        $token = $this->request->getParam('token');
+        $token = is_scalar($token) ? (string) $token : '';
         $alert = preg_match('/^[a-f0-9]{32}$/', $token) ? $this->alerts->cancel($token) : null;
         $alert
             ? $this->messageManager->addSuccessMessage(__('Done: we won\'t email you about this product.'))

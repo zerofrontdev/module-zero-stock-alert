@@ -15,6 +15,12 @@ needed), and one email when it is.
   product (the configurable one for a variant, the variant named), photo,
   price, a link to it, and "Didn't ask for it?" (cancels). Template "Back in
   Stock" (Marketing > Email Templates to customize), sender per store.
+  The cron reads only what can be bought: the products and store views waited
+  for (active store views with the module on), their stock asked once per
+  store view for up to 500 products (enabled there, on its website, salable
+  in its stock with reservations counted), then the alerts of the products
+  that are back, at most 1000 emails a run (the rest next run). Old alerts
+  for a product still sold out never hold back one that is back.
 - **Reports > Products > Stock Alerts**: products by how many wait for them,
   notified so far, waiting since, in stock now: what to restock first.
 
@@ -52,6 +58,8 @@ Stores > Configuration where it has a setting, or back up first:
 `bin/magento setup:upgrade --safe-mode=1` dumps the data before anything is
 dropped (`--data-restore=1` puts it back). Deleting the module's code instead
 leaves the tables in place.
+
+What changed in each release: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
